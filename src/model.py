@@ -25,7 +25,7 @@ class ASLCustomCNN(nn.Module):
         Initialize the ASL Custom CNN.
 
         Args:
-            num_classes: Number of output classes (24 for A-Z minus J and Z).
+            num_classes: Number of output classes.
         """
         super(ASLCustomCNN, self).__init__()
 
