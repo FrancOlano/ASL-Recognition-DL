@@ -1,0 +1,37 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# PyTorch & Model Checkpoints
+*.pth
+*.pt
+/models/checkpoints/*
+!/models/checkpoints/.keep
+
+# Data (Ignore raw and processed datasets, but keep the directory structure)
+/data/raw/*
+/data/processed/*
+!/data/raw/.keep
+!/data/processed/.keep
+
+# Kaggle
+/kaggle/
+kaggle.json
+
+# Virtual Environments
+.venv
+venv/
+env/
+
+# OS / IDE generated files
+.DS_Store
+.idea/
+.vscode/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Logging
+*.log
