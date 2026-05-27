@@ -31,7 +31,8 @@ env/
 
 # Jupyter Notebook
 .ipynb_checkpoints/
-*.ipynb
 
 # Logging
 *.log
+
+context

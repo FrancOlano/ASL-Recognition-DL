@@ -1,11 +1,4 @@
-"""ASL Fingerspelling Recognition Models - Model Factory (PyTorch)."""
-
-import torch
 import torch.nn as nn
-
-import config
-from model_mobilenetv2 import build_mobilenet_v2
-
 
 class ASLCustomCNN(nn.Module):
     """
@@ -122,31 +115,3 @@ class ASLCustomCNN(nn.Module):
         x = self.classifier(x)  # (B, num_classes)
 
         return x
-
-
-def build_model(num_classes=config.NUM_CLASSES):
-    """
-    Factory function to build the appropriate model based on config.MODEL_TYPE.
-
-    Supported models:
-    - "custom_cnn": ASLCustomCNN - Custom CNN trained from scratch (2.5M parameters)
-    - "mobilenet_v2": MobileNetV2 - Transfer learning with frozen base (14M total, 130K trainable)
-
-    Args:
-        num_classes: Number of output classes (24 for A-Z minus J and Z).
-
-    Returns:
-        Instantiated model ready for training.
-    """
-    print(f"\n{'='*70}")
-    print(f"Building model: {config.MODEL_TYPE.upper()}")
-    print(f"{'='*70}\n")
-
-    if config.MODEL_TYPE == "custom_cnn":
-        model = ASLCustomCNN(num_classes=num_classes)
-    elif config.MODEL_TYPE == "mobilenet_v2":
-        model = build_mobilenet_v2(num_classes=num_classes)
-    else:
-        raise ValueError(f"Unknown MODEL_TYPE: {config.MODEL_TYPE}. Choose 'custom_cnn' or 'mobilenet_v2'")
-
-    return model
