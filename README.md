@@ -10,7 +10,7 @@ Train either model individually or run both for a head-to-head comparison on sta
 ## 📁 Repository Structure
 
 ```
-asl-fingerspelling-recognition/
+ASL-Recognition-DL/
 ├── data/                      # Dataset (ignored in git)
 │   ├── raw/                   # Original dataset
 │   └── processed/             # Preprocessed images organized by class (A/, B/, ..., Y/)
@@ -34,8 +34,8 @@ asl-fingerspelling-recognition/
 ### Local Setup
 1. **Clone the repository:**
    ```bash
-   git clone https://github.com/YOUR_USERNAME/asl-fingerspelling-recognition.git
-   cd asl-fingerspelling-recognition
+   git clone https://github.com/FrancOlano/ASL-Recognition-DL.git
+   cd ASL-Recognition-DL
    ```
 
 2. **Create a virtual environment and install dependencies:**
@@ -65,7 +65,7 @@ This project is optimized for Kaggle's free GPUs.
 2. Enable the **GPU T4 x2** accelerator in session options.
 3. Add your ASL dataset via the "Add Data" button.
 4. Either:
-   - Clone this repo directly: `!git clone https://github.com/YOUR_USERNAME/asl-fingerspelling-recognition.git`
+   - Clone this repo directly: `!git clone https://github.com/FrancOlano/ASL-Recognition-DL.git`
    - Or upload the `src/` folder manually
 5. Run the Kaggle notebook cells (see `notebooks/kaggle_training.ipynb`).
 
@@ -231,16 +231,6 @@ Install all dependencies:
 pip install -r requirements.txt
 ```
 
-## 🔍 Expected Performance
-
-On typical ASL datasets with ~2,000-5,000 images per class:
-- **Training Accuracy:** 90-95%
-- **Validation Accuracy:** 80-88%
-- **Training Time:** 30-50 minutes on GPU (T4 x2 on Kaggle)
-- **Model Size:** ~9.5 MB (state_dict)
-
-**Note:** Custom CNNs typically require more epochs (30 vs. 20) and stronger augmentation compared to transfer learning models, but offer more flexibility for domain-specific optimization.
-
 ## 💾 Model Checkpointing
 
 The training script automatically saves the best model based on validation accuracy:
@@ -258,20 +248,7 @@ model = build_model(num_classes=24)
 model.load_state_dict(torch.load('best_model.pth'))
 model.eval()
 
-# Now use model for inference
 ```
-
-## 🎯 Next Steps
-
-After training:
-1. **Evaluate on Test Set:** Create `src/evaluate.py` to compute per-class metrics
-2. **Inference Pipeline:** Build `src/inference.py` for real-time prediction on webcam
-3. **Visualization:** Add confusion matrix and per-class accuracy analysis
-4. **Deployment:** Export to ONNX or TorchScript for production
-
-## 📝 License
-
-This project is licensed under the MIT License. See LICENSE for details.
 
 ## 🙏 Acknowledgments
 
@@ -284,9 +261,6 @@ This project is licensed under the MIT License. See LICENSE for details.
 ## 📚 Documentation
 
 - **[README.md](README.md)** - Project overview and quick start
-- **[MODEL_COMPARISON_GUIDE.md](MODEL_COMPARISON_GUIDE.md)** - Detailed guide for model selection and comparison
 - **[src/config.py](src/config.py)** - Configuration and hyperparameter settings
 
 ---
-
-**Happy training! 🚀**
