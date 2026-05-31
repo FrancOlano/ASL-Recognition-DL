@@ -129,21 +129,30 @@ def train_model(
     print(f"STARTING TRAINING PIPELINE: {model_type.upper()}")
     print(f"{'='*70}\n")
 
-    # 1. Build Model
-    model = build_model(
-        model_type=model_type, 
-        num_classes=config.NUM_CLASSES, 
-        pretrained=pretrained
-    )
-    model = model.to(device)
-
-    # 2. Setup Data
+    # 1. Load Data (so we can infer num_classes dynamically)
     print("Loading dataset...")
     train_loader, val_loader, test_loader, _, _, _ = get_data_loaders(
         data_dir=config.DATA_DIR,
         batch_size=config.BATCH_SIZE,
-        num_workers=config.NUM_WORKERS
+        num_workers=config.NUM_WORKERS,
+        classes_to_keep=getattr(config, 'CLASSES_TO_KEEP', None)
     )
+
+    # Determine number of classes from the dataset (honors any filtering done)
+    try:
+        inferred_num_classes = len(train_loader.dataset.subset.dataset.classes)
+    except Exception:
+        inferred_num_classes = getattr(config, 'NUM_CLASSES', None)
+
+    num_classes_to_use = inferred_num_classes or getattr(config, 'NUM_CLASSES', None)
+
+    # 2. Build Model with correct number of classes
+    model = build_model(
+        model_type=model_type,
+        num_classes=num_classes_to_use,
+        pretrained=pretrained
+    )
+    model = model.to(device)
 
     # 3. Setup Loss and Optimizer
     criterion = nn.CrossEntropyLoss()
@@ -180,7 +189,9 @@ def train_model(
     }
 
     # 5. Training Loop
-    checkpoint_dir = Path("/kaggle/working/checkpoints") if getattr(config, 'KAGGLE', False) else Path("./checkpoints")
+    # Prefer explicit output dirs from config when provided (allows repo-local storage)
+    default_checkpoint = Path("/kaggle/working/checkpoints") if getattr(config, 'KAGGLE', False) else Path("./checkpoints")
+    checkpoint_dir = Path(getattr(config, 'MODEL_OUTPUT_DIR', default_checkpoint))
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -218,7 +229,7 @@ def train_model(
     if checkpoint_path.exists():
         best_model = build_model(
             model_type=model_type,
-            num_classes=config.NUM_CLASSES,
+            num_classes=num_classes_to_use,
             pretrained=pretrained
         ).to(device)
         best_model.load_state_dict(torch.load(checkpoint_path, map_location=device))
@@ -228,7 +239,8 @@ def train_model(
         print(f"Test      - Loss: {test_loss:.4f}, Accuracy: {test_acc:.4f}")
 
     # 7. Save History to JSON
-    results_dir = Path("/kaggle/working/results") if getattr(config, 'KAGGLE', False) else Path("./results")
+    default_results = Path("/kaggle/working/results") if getattr(config, 'KAGGLE', False) else Path("./results")
+    results_dir = Path(getattr(config, 'RESULTS_DIR', default_results))
     results_dir.mkdir(parents=True, exist_ok=True)
     
     history_path = results_dir / f"history_{model_type}_{model_suffix}_{timestamp}.json"

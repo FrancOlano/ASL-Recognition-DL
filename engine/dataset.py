@@ -31,7 +31,7 @@ class ASLDatasetWrapper(Dataset):
         return len(self.subset)
 
 
-def get_data_loaders(data_dir, batch_size=config.BATCH_SIZE, num_workers=config.NUM_WORKERS):
+def get_data_loaders(data_dir, batch_size=config.BATCH_SIZE, num_workers=config.NUM_WORKERS, classes_to_keep=None):
     """
     Load and preprocess ASL dataset with train/validation split.
 
@@ -76,6 +76,30 @@ def get_data_loaders(data_dir, batch_size=config.BATCH_SIZE, num_workers=config.
     # Load full dataset. We apply transforms later via the wrapper.
     # Note: PyTorch ImageFolder uses PIL which loads images directly without transforms initially.
     full_dataset = ImageFolder(root=str(data_dir))
+
+    # Optionally filter the dataset to a requested subset of classes.
+    if classes_to_keep is not None:
+        from pathlib import Path as _Path
+
+        requested = [c for c in classes_to_keep if c in full_dataset.classes]
+        if len(requested) == 0:
+            raise ValueError(f"No requested classes found in dataset at {data_dir}")
+
+        new_class_to_idx = {c: i for i, c in enumerate(requested)}
+
+        new_samples = []
+        for path, orig_idx in full_dataset.samples:
+            orig_class = full_dataset.classes[orig_idx]
+            if orig_class in new_class_to_idx:
+                new_samples.append((path, new_class_to_idx[orig_class]))
+
+        full_dataset.samples = new_samples
+        try:
+            full_dataset.targets = [s[1] for s in new_samples]
+        except Exception:
+            pass
+        full_dataset.classes = requested
+        full_dataset.class_to_idx = new_class_to_idx
 
     # Calculate split sizes
     total_size = len(full_dataset)
