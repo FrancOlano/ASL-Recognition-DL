@@ -8,9 +8,10 @@ class ASLInceptionV3(nn.Module):
     This class supports both pretrained (feature extraction) and from-scratch 
     training modes. 
     
-    Note on Input Size: The project specifies 200x200 inputs without scaling. 
-    Standard InceptionV3 uses an auxiliary classifier that requires 299x299 inputs. 
-    To accommodate the 200x200 constraint, aux_logits is strictly set to False.
+    Note on Input Size: The project specifies 200x200 inputs without scaling.
+    Recent torchvision releases require pretrained InceptionV3 to be constructed
+    with aux_logits=True, so this wrapper keeps the auxiliary branch enabled and
+    returns only the main logits from forward.
     
     Args:
         num_classes (int): Number of output classes (default 26 for letters).
@@ -24,8 +25,10 @@ class ASLInceptionV3(nn.Module):
         # Load weights if pretrained, otherwise initialize from scratch
         weights = Inception_V3_Weights.DEFAULT if pretrained else None
         
-        # Initialize model. aux_logits=False is REQUIRED for 200x200 inputs.
-        self.model = inception_v3(weights=weights, aux_logits=False)
+        # torchvision requires aux_logits=True when loading pretrained weights.
+        # The wrapper hides the auxiliary output so the rest of the training code
+        # continues to work with a single logits tensor.
+        self.model = inception_v3(weights=weights, aux_logits=True)
         
         # Feature Extraction Strategy: Freeze all layers initially
         if pretrained:
@@ -50,4 +53,7 @@ class ASLInceptionV3(nn.Module):
         Returns:
             torch.Tensor: Output logits of shape (B, num_classes).
         """
-        return self.model(x)
+        outputs = self.model(x)
+        if isinstance(outputs, tuple):
+            return outputs[0]
+        return outputs

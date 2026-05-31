@@ -1,5 +1,6 @@
 """Main generalized training script for ASL Fingerspelling Recognition (PyTorch)."""
 
+import csv
 import copy
 import json
 from datetime import datetime
@@ -22,7 +23,7 @@ except ImportError:
 from engine.model_factory import build_model
 
 
-def train_epoch(model, train_loader, criterion, optimizer, device):
+def train_epoch(model, train_loader, criterion, optimizer, device, *, epoch_index=None, batch_log_path=None, global_step_start=0):
     """
     Train the model for one epoch.
     """
@@ -31,23 +32,72 @@ def train_epoch(model, train_loader, criterion, optimizer, device):
     correct_predictions = 0
     total_samples = 0
 
-    for batch_idx, (images, labels) in enumerate(train_loader):
-        images, labels = images.to(device), labels.to(device)
+    if batch_log_path is not None:
+        batch_log_path = Path(batch_log_path)
+        batch_log_path.parent.mkdir(parents=True, exist_ok=True)
+        write_header = not batch_log_path.exists()
+        batch_log_file = batch_log_path.open('a', newline='')
+        batch_writer = csv.DictWriter(
+            batch_log_file,
+            fieldnames=[
+                'epoch',
+                'batch',
+                'global_step',
+                'batch_loss',
+                'batch_accuracy',
+                'running_loss',
+                'running_accuracy',
+                'learning_rate',
+            ],
+        )
+        if write_header:
+            batch_writer.writeheader()
+    else:
+        batch_log_file = None
+        batch_writer = None
 
-        optimizer.zero_grad()
-        outputs = model(images)
-        loss = criterion(outputs, labels)
-        
-        loss.backward()
-        optimizer.step()
+    try:
+        for batch_idx, (images, labels) in enumerate(train_loader):
+            images, labels = images.to(device), labels.to(device)
 
-        running_loss += loss.item()
-        _, predicted = torch.max(outputs.data, 1)
-        correct_predictions += (predicted == labels).sum().item()
-        total_samples += labels.size(0)
+            optimizer.zero_grad()
+            outputs = model(images)
+            loss = criterion(outputs, labels)
 
-        if (batch_idx + 1) % 10 == 0:
-            print(f"  Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {loss.item():.4f}")
+            loss.backward()
+            optimizer.step()
+
+            batch_loss = loss.item()
+            _, predicted = torch.max(outputs.data, 1)
+            batch_correct = (predicted == labels).sum().item()
+            batch_total = labels.size(0)
+
+            running_loss += batch_loss
+            correct_predictions += batch_correct
+            total_samples += batch_total
+
+            batch_accuracy = batch_correct / batch_total if batch_total else 0.0
+            running_accuracy = correct_predictions / total_samples if total_samples else 0.0
+            global_step = global_step_start + batch_idx + 1
+
+            if batch_writer is not None:
+                batch_writer.writerow({
+                    'epoch': epoch_index,
+                    'batch': batch_idx + 1,
+                    'global_step': global_step,
+                    'batch_loss': batch_loss,
+                    'batch_accuracy': batch_accuracy,
+                    'running_loss': running_loss / (batch_idx + 1),
+                    'running_accuracy': running_accuracy,
+                    'learning_rate': optimizer.param_groups[0]['lr'],
+                })
+                batch_log_file.flush()
+
+            if (batch_idx + 1) % 10 == 0:
+                print(f"  Batch [{batch_idx + 1}/{len(train_loader)}], Loss: {batch_loss:.4f}")
+    finally:
+        if batch_log_file is not None:
+            batch_log_file.close()
 
     return running_loss / len(train_loader), correct_predictions / total_samples
 
@@ -185,7 +235,8 @@ def train_model(
         "test_loss": None,
         "test_accuracy": None,
         "best_val_accuracy": 0.0,
-        "best_epoch": 0
+        "best_epoch": 0,
+        "batch_metrics_path": None,
     }
 
     # 5. Training Loop
@@ -193,17 +244,32 @@ def train_model(
     default_checkpoint = Path("/kaggle/working/checkpoints") if getattr(config, 'KAGGLE', False) else Path("./checkpoints")
     checkpoint_dir = Path(getattr(config, 'MODEL_OUTPUT_DIR', default_checkpoint))
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+    default_results = Path("/kaggle/working/results") if getattr(config, 'KAGGLE', False) else Path("./results")
+    results_dir = Path(getattr(config, 'RESULTS_DIR', default_results))
+    results_dir.mkdir(parents=True, exist_ok=True)
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_suffix = "pretrained" if pretrained else "scratch"
     checkpoint_path = checkpoint_dir / f"best_{model_type}_{model_suffix}.pth"
+    batch_metrics_path = results_dir / f"batch_metrics_{model_type}_{model_suffix}_{timestamp}.csv"
+    history["batch_metrics_path"] = str(batch_metrics_path)
 
     total_epochs = epochs or config.EPOCHS
 
     for epoch in range(total_epochs):
         print(f"Epoch [{epoch + 1}/{total_epochs}]")
 
-        train_loss, train_acc = train_epoch(model, train_loader, criterion, optimizer, device)
+        train_loss, train_acc = train_epoch(
+            model,
+            train_loader,
+            criterion,
+            optimizer,
+            device,
+            epoch_index=epoch + 1,
+            batch_log_path=batch_metrics_path,
+            global_step_start=epoch * len(train_loader),
+        )
         val_loss, val_acc = validate(model, val_loader, criterion, device)
 
         # Update History
@@ -239,16 +305,13 @@ def train_model(
         print(f"Test      - Loss: {test_loss:.4f}, Accuracy: {test_acc:.4f}")
 
     # 7. Save History to JSON
-    default_results = Path("/kaggle/working/results") if getattr(config, 'KAGGLE', False) else Path("./results")
-    results_dir = Path(getattr(config, 'RESULTS_DIR', default_results))
-    results_dir.mkdir(parents=True, exist_ok=True)
-    
     history_path = results_dir / f"history_{model_type}_{model_suffix}_{timestamp}.json"
     with open(history_path, 'w') as f:
         json.dump(history, f, indent=2)
         
     print(f"Training completed for {model_type}!")
     print(f"Best validation accuracy: {best_val_accuracy:.4f} (Epoch {history['best_epoch']})")
+    print(f"Batch metrics saved to: {batch_metrics_path}")
     print(f"History saved to: {history_path}")
 
     return history

@@ -81,7 +81,7 @@ else:
     PROJECT_ROOT = Path(__file__).parent
     DATA_DIR = PROJECT_ROOT / "data" / "processed"
 
-MODEL_OUTPUT_DIR = PROJECT_ROOT / "checkpoints"
+MODEL_OUTPUT_DIR = PROJECT_ROOT / "models" / "checkpoints"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
 # Dynamic checkpoint naming based on the active configuration
