@@ -10,8 +10,8 @@ class ASLInceptionV3(nn.Module):
     
     Note on Input Size: The project specifies 200x200 inputs without scaling.
     Recent torchvision releases require pretrained InceptionV3 to be constructed
-    with aux_logits=True, so this wrapper keeps the auxiliary branch enabled and
-    returns only the main logits from forward.
+    with aux_logits=True, so this wrapper enables it only during construction and
+    then removes the auxiliary branch for training on 200x200 inputs.
     
     Args:
         num_classes (int): Number of output classes (default 26 for letters).
@@ -26,9 +26,11 @@ class ASLInceptionV3(nn.Module):
         weights = Inception_V3_Weights.DEFAULT if pretrained else None
         
         # torchvision requires aux_logits=True when loading pretrained weights.
-        # The wrapper hides the auxiliary output so the rest of the training code
-        # continues to work with a single logits tensor.
         self.model = inception_v3(weights=weights, aux_logits=True)
+
+        # Remove the auxiliary head so 200x200 inputs do not go through the aux path.
+        self.model.AuxLogits = None
+        self.model.aux_logits = False
         
         # Feature Extraction Strategy: Freeze all layers initially
         if pretrained:
