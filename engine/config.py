@@ -26,7 +26,7 @@ IMAGE_SIZE = 200
 NUM_CLASSES = 26 
 
 # Hardware constraints / Training setup
-BATCH_SIZE = 10 
+BATCH_SIZE = 50
 
 # -----------------------------------------------------------------------------
 # 3. Training Hyperparameters
