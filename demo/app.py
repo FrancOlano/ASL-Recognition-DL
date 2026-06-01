@@ -13,14 +13,14 @@ from torchvision import transforms
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINT_PATH = PROJECT_ROOT / "models" / "checkpoints" / "best_mobilenet_v2_scratch.pth"
+CHECKPOINT_PATH = PROJECT_ROOT / "models" / "checkpoints" / "best_inception_v3_scratch.pth"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from engine import config as train_config
-from models.ASLMobileNetV2 import ASLMobileNetV2
+from models.ASLInceptionV3 import ASLInceptionV3
 
 
 app = Flask(__name__)
@@ -84,7 +84,7 @@ def _strip_module_prefix(state_dict):
 
 
 def _build_model(num_classes: int):
-    return ASLMobileNetV2(num_classes=num_classes, pretrained=False)
+    return ASLInceptionV3(num_classes=num_classes, pretrained=False)
 
 
 def _load_model() -> None:
@@ -94,7 +94,7 @@ def _load_model() -> None:
     if not checkpoint_path.is_file():
         MODEL_INFO = {
             "ready": False,
-            "architecture": "mobilenet_v2",
+            "architecture": "inceptionnet_v3",
             "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
             "message": f"Checkpoint not found: {checkpoint_path}",
         }
@@ -110,7 +110,7 @@ def _load_model() -> None:
         MODEL = model
         MODEL_INFO = {
             "ready": True,
-            "architecture": "mobilenet_v2",
+            "architecture": "inceptionnet_v3",
             "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
             "message": "",
         }
@@ -118,7 +118,7 @@ def _load_model() -> None:
         MODEL = None
         MODEL_INFO = {
             "ready": False,
-            "architecture": "mobilenet_v2",
+            "architecture": "inceptionnet_v3",
             "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
             "message": f"Failed to load checkpoint: {exc}",
         }
