@@ -11,11 +11,7 @@ This folder contains a small browser demo for the ASL fingerspelling model.
 
 ## Checkpoint loading
 
-The app looks for the newest checkpoint in `models/checkpoints/` with one of these extensions:
-
-- `.pth`
-- `.pt`
-- `.ckpt`
+The app loads the fixed checkpoint at `models/checkpoints/best_mobilenet_v2_scratch.pth`.
 
 If no checkpoint is present, the page still loads but the prediction endpoint stays disabled until a checkpoint is added.
 
@@ -37,5 +33,5 @@ If no checkpoint is present, the page still loads but the prediction endpoint st
 
 ## Notes
 
-- The model uses the same `224x224` RGB preprocessing as the training code in `src/`.
-- The class order is alphabetical over the 24 static ASL letters: A-I, K-Y.
+- The model uses the same `200x200` RGB preprocessing as the training config in `engine/`.
+- The class order is alphabetical over the 26 letters (A-Z) and is read from `results/classes.json` when available.

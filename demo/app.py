@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import sys
 from pathlib import Path
 
@@ -12,29 +13,27 @@ from torchvision import transforms
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-SRC_DIR = PROJECT_ROOT / "src"
-CHECKPOINT_DIR = PROJECT_ROOT / "models" / "checkpoints"
+CHECKPOINT_PATH = PROJECT_ROOT / "models" / "checkpoints" / "best_mobilenet_v2_scratch.pth"
+RESULTS_DIR = PROJECT_ROOT / "results"
 
-if str(SRC_DIR) not in sys.path:
-    sys.path.insert(0, str(SRC_DIR))
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-import config as train_config
-from model import ASLCustomCNN
-from model_mobilenetv2 import build_mobilenet_v2
+from engine import config as train_config
+from models.ASLMobileNetV2 import ASLMobileNetV2
 
 
 app = Flask(__name__)
 
-CLASS_NAMES = [
-    "A", "B", "C", "D", "E", "F", "G", "H", "I",
-    "K", "L", "M", "N", "O", "P", "Q", "R", "S",
-    "T", "U", "V", "W", "X", "Y",
+DEFAULT_CLASS_NAMES = [
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
+    "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
+    "U", "V", "W", "X", "Y", "Z",
 ]
 
 PREPROCESS = transforms.Compose(
     [
-        transforms.Resize(256),
-        transforms.CenterCrop(train_config.IMAGE_SIZE),
+        transforms.Resize((train_config.IMAGE_SIZE, train_config.IMAGE_SIZE)),
         transforms.ToTensor(),
         transforms.Normalize(mean=train_config.IMAGENET_MEAN, std=train_config.IMAGENET_STD),
     ]
@@ -50,18 +49,19 @@ MODEL_INFO = {
 }
 
 
-def _find_checkpoint_path() -> Path | None:
-    candidates = [
-        *CHECKPOINT_DIR.glob("*.pth"),
-        *CHECKPOINT_DIR.glob("*.pt"),
-        *CHECKPOINT_DIR.glob("*.ckpt"),
-    ]
-    candidates = [path for path in candidates if path.is_file()]
-    if not candidates:
-        return None
+def _load_class_names() -> list[str]:
+    classes_path = RESULTS_DIR / "classes.json"
+    if classes_path.is_file():
+        try:
+            payload = json.loads(classes_path.read_text(encoding="utf-8"))
+            if isinstance(payload, list) and all(isinstance(item, str) for item in payload):
+                return payload
+        except Exception:
+            pass
+    return DEFAULT_CLASS_NAMES
 
-    candidates.sort(key=lambda path: path.stat().st_mtime, reverse=True)
-    return candidates[0]
+
+CLASS_NAMES = _load_class_names()
 
 
 def _extract_state_dict(raw_checkpoint):
@@ -83,61 +83,45 @@ def _strip_module_prefix(state_dict):
     return stripped
 
 
-def _looks_like_mobilenet(state_dict) -> bool:
-    keys = list(state_dict.keys())
-    return any(key.startswith("features.") for key in keys) or any(
-        key.startswith("classifier.1.") or key == "classifier.1.weight" for key in keys
-    )
-
-
-def _build_model(architecture: str):
-    if architecture == "mobilenet_v2":
-        return build_mobilenet_v2(num_classes=train_config.NUM_CLASSES)
-    return ASLCustomCNN(num_classes=train_config.NUM_CLASSES)
+def _build_model(num_classes: int):
+    return ASLMobileNetV2(num_classes=num_classes, pretrained=False)
 
 
 def _load_model() -> None:
     global MODEL, MODEL_INFO
 
-    checkpoint_path = _find_checkpoint_path()
-    if checkpoint_path is None:
+    checkpoint_path = CHECKPOINT_PATH
+    if not checkpoint_path.is_file():
         MODEL_INFO = {
             "ready": False,
-            "architecture": None,
-            "checkpoint": None,
-            "message": f"No checkpoint found in {CHECKPOINT_DIR}",
+            "architecture": "mobilenet_v2",
+            "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
+            "message": f"Checkpoint not found: {checkpoint_path}",
         }
         return
 
     raw_checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
     state_dict = _strip_module_prefix(_extract_state_dict(raw_checkpoint))
 
-    architectures = ["mobilenet_v2", "custom_cnn"] if _looks_like_mobilenet(state_dict) else ["custom_cnn", "mobilenet_v2"]
-
-    last_error = None
-    for architecture in architectures:
-        model = _build_model(architecture).to(DEVICE)
-        try:
-            model.load_state_dict(state_dict, strict=True)
-            model.eval()
-            MODEL = model
-            MODEL_INFO = {
-                "ready": True,
-                "architecture": architecture,
-                "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
-                "message": "",
-            }
-            return
-        except Exception as exc:  # pragma: no cover - surfaced in app status
-            last_error = exc
-
-    MODEL = None
-    MODEL_INFO = {
-        "ready": False,
-        "architecture": None,
-        "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
-        "message": f"Failed to load checkpoint: {last_error}",
-    }
+    try:
+        model = _build_model(num_classes=len(CLASS_NAMES)).to(DEVICE)
+        model.load_state_dict(state_dict, strict=True)
+        model.eval()
+        MODEL = model
+        MODEL_INFO = {
+            "ready": True,
+            "architecture": "mobilenet_v2",
+            "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
+            "message": "",
+        }
+    except Exception as exc:
+        MODEL = None
+        MODEL_INFO = {
+            "ready": False,
+            "architecture": "mobilenet_v2",
+            "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
+            "message": f"Failed to load checkpoint: {exc}",
+        }
 
 
 def _decode_image(image_payload: str) -> Image.Image:
@@ -158,7 +142,8 @@ def _predict_image(image: Image.Image):
     with torch.no_grad():
         logits = MODEL(tensor)
         probabilities = torch.softmax(logits, dim=1)[0]
-        top_probabilities, top_indices = torch.topk(probabilities, k=3)
+        top_k = min(3, len(CLASS_NAMES))
+        top_probabilities, top_indices = torch.topk(probabilities, k=top_k)
 
     top_index = int(top_indices[0].item())
     prediction = CLASS_NAMES[top_index]
