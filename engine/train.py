@@ -197,12 +197,19 @@ def train_model(
     num_classes_to_use = inferred_num_classes or getattr(config, 'NUM_CLASSES', None)
 
     # 2. Build Model with correct number of classes
+    pretrained_requested = pretrained
     model = build_model(
         model_type=model_type,
         num_classes=num_classes_to_use,
         pretrained=pretrained
     )
     model = model.to(device)
+    pretrained = getattr(model, "pretrained", pretrained)
+    if pretrained != pretrained_requested:
+        print(
+            "Pretrained weights were requested but could not be loaded; "
+            "continuing with randomly initialized weights."
+        )
 
     # 3. Setup Loss and Optimizer
     criterion = nn.CrossEntropyLoss()
@@ -224,6 +231,7 @@ def train_model(
     history = {
         "model_type": model_type,
         "pretrained": pretrained,
+        "pretrained_requested": pretrained_requested,
         "optimizer": optimizer_name,
         "learning_rate": learning_rate or config.LEARNING_RATE,
         "batch_size": config.BATCH_SIZE,

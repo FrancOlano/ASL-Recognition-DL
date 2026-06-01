@@ -71,12 +71,14 @@ def build_model(model_type=config.MODEL_TYPE, num_classes=config.NUM_CLASSES, pr
     elif model_type == "mobilenet_v2":
         # MobileNetV2 from scratch [cite: 183] or pretrained [cite: 182]
         model = ASLMobileNetV2(num_classes=num_classes, pretrained=pretrained)
-        _print_model_summary("MobileNetV2", model, num_classes, pretrained)
+        actual_pretrained = getattr(model, "pretrained", pretrained)
+        _print_model_summary("MobileNetV2", model, num_classes, actual_pretrained)
         
     elif model_type == "inception_v3":
         # InceptionV3 from scratch [cite: 185] or pretrained [cite: 184]
         model = ASLInceptionV3(num_classes=num_classes, pretrained=pretrained)
-        _print_model_summary("InceptionV3", model, num_classes, pretrained)
+        actual_pretrained = getattr(model, "pretrained", pretrained)
+        _print_model_summary("InceptionV3", model, num_classes, actual_pretrained)
         
     else:
         raise ValueError(

@@ -1,3 +1,5 @@
+import warnings
+
 import torch.nn as nn
 from torchvision.models import inception_v3, Inception_V3_Weights
 
@@ -26,14 +28,25 @@ class ASLInceptionV3(nn.Module):
         weights = Inception_V3_Weights.DEFAULT if pretrained else None
         
         # torchvision requires aux_logits=True when loading pretrained weights.
-        self.model = inception_v3(weights=weights, aux_logits=True)
+        try:
+            self.model = inception_v3(weights=weights, aux_logits=True)
+            self.pretrained = pretrained
+        except Exception as exc:
+            if not pretrained:
+                raise
+            warnings.warn(
+                "Failed to load pretrained InceptionV3 weights; falling back to random initialization. "
+                f"Original error: {type(exc).__name__}: {exc}"
+            )
+            self.model = inception_v3(weights=None, aux_logits=True)
+            self.pretrained = False
 
         # Remove the auxiliary head so 200x200 inputs do not go through the aux path.
         self.model.AuxLogits = None
         self.model.aux_logits = False
         
         # Feature Extraction Strategy: Freeze all layers initially
-        if pretrained:
+        if self.pretrained:
             for param in self.model.parameters():
                 param.requires_grad = False
                 
