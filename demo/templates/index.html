@@ -26,23 +26,41 @@
           <span class="dot {{ 'ready' if model_ready else 'not-ready' }}"></span>
           <div>
             <strong>{{ 'Model loaded' if model_ready else 'Model not loaded' }}</strong>
-            <p>{{ status_message or 'Ready to run.' }}</p>
+            <p id="statusMessage">{{ status_message or 'Ready to run.' }}</p>
           </div>
         </div>
         <dl>
           <div>
+            <dt>Active model</dt>
+            <dd id="currentModelLabel">{{ current_model_label or 'pending' }}</dd>
+          </div>
+          <div>
             <dt>Architecture</dt>
-            <dd>{{ model_architecture or 'pending' }}</dd>
+            <dd id="currentModelArchitecture">{{ model_architecture or 'pending' }}</dd>
           </div>
           <div>
             <dt>Checkpoint</dt>
-            <dd>{{ checkpoint_path or 'none found' }}</dd>
+            <dd id="currentModelCheckpoint">{{ checkpoint_path or 'none found' }}</dd>
           </div>
           <div>
             <dt>Classes</dt>
             <dd>{{ class_count }}</dd>
           </div>
         </dl>
+        <div class="model-switcher">
+          <label for="modelSelect">Model</label>
+          <div class="model-switch-row">
+            <select id="modelSelect">
+              {% for model in available_models %}
+              <option value="{{ model.key }}" {% if model.key == (current_model_key or default_model_key) %}selected{% endif %}>
+                {{ model.label }}
+              </option>
+              {% endfor %}
+            </select>
+            <button id="loadModelBtn" type="button" class="ghost">Load selected</button>
+          </div>
+          <p class="model-switch-note" id="modelSwitchNote">Switching models updates inference on the next capture.</p>
+        </div>
       </div>
     </section>
 
@@ -103,6 +121,10 @@
     window.ASL_DEMO = {
       modelReady: {{ 'true' if model_ready else 'false' }},
       statusMessage: {{ status_message|tojson }},
+      currentModelKey: {{ current_model_key|tojson }},
+      currentModelLabel: {{ current_model_label|tojson }},
+      defaultModelKey: {{ default_model_key|tojson }},
+      availableModels: {{ available_models|tojson }},
     };
   </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
