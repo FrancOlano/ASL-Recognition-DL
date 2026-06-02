@@ -18,6 +18,8 @@ const currentModelArchitecture = document.getElementById("currentModelArchitectu
 const currentModelCheckpoint = document.getElementById("currentModelCheckpoint");
 const statusMessage = document.getElementById("statusMessage");
 const modelSwitchNote = document.getElementById("modelSwitchNote");
+const leftHandBtn = document.getElementById("leftHandBtn");
+const rightHandBtn = document.getElementById("rightHandBtn");
 
 // Offscreen canvas for downscaling images (drastically reduces memory/payloads)
 const processCanvas = document.createElement("canvas");
@@ -33,7 +35,8 @@ const appState = {
   commitLockUntil: 0,
   modelKey: window.ASL_DEMO?.currentModelKey || window.ASL_DEMO?.defaultModelKey || null,
   switchingModel: false,
-  isPredicting: false, // Prevents Promise/RAM pile-up
+  isPredicting: false, 
+  hand: "switch", // FIXED: Default matches the Left hand button state
 };
 
 const STABLE_FRAMES = 5;
@@ -135,14 +138,13 @@ function processPrediction(payload) {
 }
 
 async function captureAndPredict() {
-  // CRITICAL FIX: Do not stack requests if the previous one is still processing
   if (appState.switchingModel || appState.isPredicting) return;
   if (!appState.stream || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
-  appState.isPredicting = true; // Lock
+  appState.isPredicting = true; 
 
   try {
-    // 1. Draw to visual UI canvas as normal
+    // 1. Draw to visual UI canvas as normal (mirrored for the user)
     const context = canvas.getContext("2d", { willReadFrequently: false });
     context.save();
     context.translate(canvas.width, 0);
@@ -156,16 +158,21 @@ async function captureAndPredict() {
     const startY = (video.videoHeight - minDim) / 2;
 
     processCtx.save();
-    processCtx.translate(processCanvas.width, 0);
-    processCtx.scale(-1, 1);
+    
+    // Flip horizontally if the Left hand is selected.
+    // This makes a left hand look like a right hand to the model.
+    if (appState.hand === "switch") {
+      processCtx.translate(processCanvas.width, 0);
+      processCtx.scale(-1, 1);
+    }
+    
     processCtx.drawImage(
       video,
-      startX, startY, minDim, minDim,         // Crop out the center square natively
-      0, 0, processCanvas.width, processCanvas.height // Squeeze to 256x256
+      startX, startY, minDim, minDim,         
+      0, 0, processCanvas.width, processCanvas.height 
     );
     processCtx.restore();
 
-    // Convert optimized canvas
     const image = processCanvas.toDataURL("image/jpeg", 0.7);
 
     const response = await fetch("/predict", {
@@ -179,7 +186,6 @@ async function captureAndPredict() {
   } catch (error) {
     setCameraState("Prediction request failed", false);
   } finally {
-    // Unlock memory for the next frame
     appState.isPredicting = false;
   }
 }
@@ -264,17 +270,32 @@ function addSpace() {
   }
 }
 
+// Event Listeners
 startBtn.addEventListener("click", startCamera);
 stopBtn.addEventListener("click", stopCamera);
 clearBtn.addEventListener("click", clearTranscript);
 backspaceBtn.addEventListener("click", backspaceTranscript);
 spaceBtn.addEventListener("click", addSpace);
+
+leftHandBtn?.addEventListener("click", () => {
+  appState.hand = "switch";
+  leftHandBtn.classList.add("active");
+  rightHandBtn.classList.remove("active");
+});
+
+rightHandBtn?.addEventListener("click", () => {
+  appState.hand = "no-switch";
+  rightHandBtn.classList.add("active");
+  leftHandBtn.classList.remove("active");
+});
+
 loadModelBtn?.addEventListener("click", loadSelectedModel);
 modelSelect?.addEventListener("change", () => {
   const selectedLabel = modelSelect.options[modelSelect.selectedIndex]?.textContent?.trim() || modelSelect.value;
   setModelSwitchState(`Selected ${selectedLabel}. Click Load selected to apply.`);
 });
 
+// Initial Setup
 updatePredictionUI("-", 0, []);
 setCameraState(window.ASL_DEMO?.modelReady ? "Ready to start" : "Add a checkpoint to enable inference", window.ASL_DEMO?.modelReady);
 
