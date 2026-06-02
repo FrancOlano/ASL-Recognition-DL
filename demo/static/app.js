@@ -19,6 +19,12 @@ const currentModelCheckpoint = document.getElementById("currentModelCheckpoint")
 const statusMessage = document.getElementById("statusMessage");
 const modelSwitchNote = document.getElementById("modelSwitchNote");
 
+// Offscreen canvas for downscaling images (drastically reduces memory/payloads)
+const processCanvas = document.createElement("canvas");
+processCanvas.width = 256; 
+processCanvas.height = 256;
+const processCtx = processCanvas.getContext("2d", { willReadFrequently: false });
+
 const appState = {
   stream: null,
   timer: null,
@@ -27,6 +33,7 @@ const appState = {
   commitLockUntil: 0,
   modelKey: window.ASL_DEMO?.currentModelKey || window.ASL_DEMO?.defaultModelKey || null,
   switchingModel: false,
+  isPredicting: false, // Prevents Promise/RAM pile-up
 };
 
 const STABLE_FRAMES = 5;
@@ -49,17 +56,9 @@ function renderTopK(items) {
 }
 
 function setModelSwitchState(message, isLoading = false) {
-  if (modelSwitchNote) {
-    modelSwitchNote.textContent = message;
-  }
-
-  if (loadModelBtn) {
-    loadModelBtn.disabled = isLoading;
-  }
-
-  if (modelSelect) {
-    modelSelect.disabled = isLoading;
-  }
+  if (modelSwitchNote) modelSwitchNote.textContent = message;
+  if (loadModelBtn) loadModelBtn.disabled = isLoading;
+  if (modelSelect) modelSelect.disabled = isLoading;
 }
 
 function updatePredictionUI(letter, confidence, top3 = []) {
@@ -77,20 +76,14 @@ function appendTranscript(text) {
 
 function commitCharacter(character) {
   const now = Date.now();
-  if (now < appState.commitLockUntil) {
-    return;
-  }
-
+  if (now < appState.commitLockUntil) return;
   appendTranscript(character);
   appState.commitLockUntil = now + COMMIT_COOLDOWN_MS;
 }
 
 function commitAction(action) {
   const now = Date.now();
-  if (now < appState.commitLockUntil) {
-    return;
-  }
-
+  if (now < appState.commitLockUntil) return;
   action();
   appState.commitLockUntil = now + COMMIT_COOLDOWN_MS;
 }
@@ -105,65 +98,76 @@ function processPrediction(payload) {
   const { prediction, confidence, top3 } = payload;
   updatePredictionUI(prediction, confidence, top3);
 
-  if (confidence < CONFIDENCE_THRESHOLD) {
+  if (confidence < 0.7) {
     appState.lastPrediction = null;
-    appState.stableCount = 0;
+    appState.stableSince = null;
     return;
   }
 
-  if (prediction === appState.lastPrediction) {
-    appState.stableCount += 1;
-  } else {
+  if (prediction !== appState.lastPrediction) {
     appState.lastPrediction = prediction;
-    appState.stableCount = 1;
+    appState.stableSince = Date.now();
   }
 
   setCameraState(`Tracking ${prediction}`, true);
 
-  if (appState.stableCount >= STABLE_FRAMES) {
+  const now = Date.now();
+  const timeStable = now - appState.stableSince;
+
+  let requiredFirstWriteDelay = 1200;
+  if (confidence >= 0.95) requiredFirstWriteDelay = 500;
+  else if (confidence >= 0.85) requiredFirstWriteDelay = 800;
+
+  if (timeStable >= requiredFirstWriteDelay) {
     const normalized = String(prediction || "").toLowerCase();
+    
     if (normalized === "nothing") {
-      appState.stableCount = 0;
       appState.lastPrediction = null;
+      appState.stableSince = null;
       return;
     }
-    if (normalized === "space") {
-      commitAction(addSpace);
-      appState.stableCount = 0;
-      appState.lastPrediction = null;
-      return;
-    }
-    if (normalized === "del" || normalized === "backspace") {
-      commitAction(backspaceTranscript);
-      appState.stableCount = 0;
-      appState.lastPrediction = null;
-      return;
-    }
+    
+    if (normalized === "space") return commitAction(addSpace);
+    if (normalized === "del" || normalized === "backspace") return commitAction(backspaceTranscript);
 
     commitCharacter(prediction);
-    appState.stableCount = 0;
   }
 }
 
 async function captureAndPredict() {
-  if (appState.switchingModel) {
-    return;
-  }
+  // CRITICAL FIX: Do not stack requests if the previous one is still processing
+  if (appState.switchingModel || appState.isPredicting) return;
+  if (!appState.stream || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
-  if (!appState.stream || video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-    return;
-  }
-
-  const context = canvas.getContext("2d", { willReadFrequently: false });
-  context.save();
-  context.translate(canvas.width, 0);
-  context.scale(-1, 1);
-  context.drawImage(video, 0, 0, canvas.width, canvas.height);
-  context.restore();
-
-  const image = canvas.toDataURL("image/jpeg", 0.78);
+  appState.isPredicting = true; // Lock
 
   try {
+    // 1. Draw to visual UI canvas as normal
+    const context = canvas.getContext("2d", { willReadFrequently: false });
+    context.save();
+    context.translate(canvas.width, 0);
+    context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    context.restore();
+
+    // 2. Downscale into smaller processCanvas to avoid Base64 memory bloat
+    const minDim = Math.min(video.videoWidth, video.videoHeight);
+    const startX = (video.videoWidth - minDim) / 2;
+    const startY = (video.videoHeight - minDim) / 2;
+
+    processCtx.save();
+    processCtx.translate(processCanvas.width, 0);
+    processCtx.scale(-1, 1);
+    processCtx.drawImage(
+      video,
+      startX, startY, minDim, minDim,         // Crop out the center square natively
+      0, 0, processCanvas.width, processCanvas.height // Squeeze to 256x256
+    );
+    processCtx.restore();
+
+    // Convert optimized canvas
+    const image = processCanvas.toDataURL("image/jpeg", 0.7);
+
     const response = await fetch("/predict", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -174,20 +178,16 @@ async function captureAndPredict() {
     processPrediction(payload);
   } catch (error) {
     setCameraState("Prediction request failed", false);
+  } finally {
+    // Unlock memory for the next frame
+    appState.isPredicting = false;
   }
 }
 
 async function loadSelectedModel() {
   const selectedModel = modelSelect?.value;
-  if (!selectedModel) {
-    setModelSwitchState("No model is available to load.");
-    return;
-  }
-
-  if (selectedModel === appState.modelKey) {
-    setModelSwitchState("Selected model is already active.");
-    return;
-  }
+  if (!selectedModel) return setModelSwitchState("No model is available to load.");
+  if (selectedModel === appState.modelKey) return setModelSwitchState("Selected model is already active.");
 
   appState.switchingModel = true;
   setModelSwitchState(`Loading ${selectedModel}...`, true);
@@ -200,30 +200,18 @@ async function loadSelectedModel() {
     });
 
     const payload = await response.json();
-    if (!payload.ok) {
-      throw new Error(payload.model?.message || payload.error || "Model switch failed");
-    }
+    if (!payload.ok) throw new Error(payload.model?.message || payload.error || "Model switch failed");
 
     appState.modelKey = payload.model.key;
-    if (currentModelLabel) {
-      currentModelLabel.textContent = payload.model.label || payload.model.key;
-    }
-    if (currentModelArchitecture) {
-      currentModelArchitecture.textContent = payload.model.architecture || "pending";
-    }
-    if (currentModelCheckpoint) {
-      currentModelCheckpoint.textContent = payload.model.checkpoint || "none found";
-    }
-    if (statusMessage) {
-      statusMessage.textContent = `Loaded ${payload.model.label}`;
-    }
+    if (currentModelLabel) currentModelLabel.textContent = payload.model.label || payload.model.key;
+    if (currentModelArchitecture) currentModelArchitecture.textContent = payload.model.architecture || "pending";
+    if (currentModelCheckpoint) currentModelCheckpoint.textContent = payload.model.checkpoint || "none found";
+    if (statusMessage) statusMessage.textContent = `Loaded ${payload.model.label}`;
 
     setCameraState(`Using ${payload.model.label}`, true);
     setModelSwitchState(`Active model: ${payload.model.label}`);
   } catch (error) {
-    if (modelSelect) {
-      modelSelect.value = appState.modelKey || window.ASL_DEMO?.defaultModelKey || "";
-    }
+    if (modelSelect) modelSelect.value = appState.modelKey || window.ASL_DEMO?.defaultModelKey || "";
     setModelSwitchState(error.message || "Failed to load model");
     setCameraState("Model switch failed", false);
   } finally {
@@ -246,10 +234,7 @@ async function startCamera() {
     await video.play();
     setCameraState("Camera active", true);
 
-    if (appState.timer) {
-      clearInterval(appState.timer);
-    }
-
+    if (appState.timer) clearInterval(appState.timer);
     appState.timer = setInterval(captureAndPredict, PREDICT_INTERVAL_MS);
   } catch (error) {
     setCameraState("Camera permission denied", false);
@@ -271,14 +256,8 @@ function stopCamera() {
   setCameraState("Camera stopped", false);
 }
 
-function clearTranscript() {
-  transcript.value = "";
-}
-
-function backspaceTranscript() {
-  transcript.value = transcript.value.slice(0, -1);
-}
-
+function clearTranscript() { transcript.value = ""; }
+function backspaceTranscript() { transcript.value = transcript.value.slice(0, -1); }
 function addSpace() {
   if (!transcript.value.endsWith(" ") && transcript.value.length > 0) {
     transcript.value += " ";

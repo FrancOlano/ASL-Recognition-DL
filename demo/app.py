@@ -216,26 +216,38 @@ def _load_default_model() -> dict:
     return MODEL_INFO
 
 
-def _decode_image(image_payload: str) -> Image.Image:
+def _predict_image_payload(image_payload: str):
+    """
+    Decodes, predicts, and completely destroys image variables in one scoped function
+    to prevent RAM leak pileups.
+    """
     if "," in image_payload:
         image_payload = image_payload.split(",", 1)[1]
 
     image_bytes = base64.b64decode(image_payload)
-    image = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    return image
 
+    # Use context managers to auto-close buffers and strictly manage the PIL image lifecycle
+    with io.BytesIO(image_bytes) as buf:
+        with Image.open(buf) as img:
+            image = img.convert("RGB")
 
-def _predict_image(image: Image.Image):
     with MODEL_LOCK:
         model = MODEL
         model_info = dict(MODEL_INFO)
 
     if model is None:
+        image.close()
         raise RuntimeError(model_info.get("message") or "Model is not ready")
 
     class_names = model_info.get("class_names", DEFAULT_CLASS_NAMES)
 
+    # Process and move tensor to Device
     tensor = PREPROCESS(image).unsqueeze(0).to(DEVICE)
+    
+    # 💥 CRITICAL: Explicitly destroy the PIL image from RAM immediately
+    image.close()
+    del image
+    del image_bytes 
 
     with torch.no_grad():
         logits = model(tensor)
@@ -246,7 +258,7 @@ def _predict_image(image: Image.Image):
     top_index = int(top_indices[0].item())
     prediction = class_names[top_index]
 
-    return {
+    result = {
         "prediction": prediction,
         "confidence": float(top_probabilities[0].item()),
         "top3": [
@@ -257,6 +269,11 @@ def _predict_image(image: Image.Image):
             for index, prob in zip(top_indices, top_probabilities)
         ],
     }
+
+    # 💥 CRITICAL: Explicitly clear the tensors from GPU/CPU memory before returning
+    del tensor, logits, probabilities, top_probabilities, top_indices
+
+    return result
 
 
 @app.route("/")
@@ -301,8 +318,7 @@ def predict():
         return jsonify({"ok": False, "error": "Missing image payload"}), 400
 
     try:
-        image = _decode_image(image_payload)
-        prediction = _predict_image(image)
+        prediction = _predict_image_payload(image_payload)
         return jsonify(
             {
                 "ok": True,
