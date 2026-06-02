@@ -33,18 +33,24 @@ MODEL_REGISTRY = {
         "architecture": "mobilenet_v2",
         "checkpoint": CHECKPOINT_DIR / "best_mobilenet_v2_scratch.pth",
     },
+    "mobilenet_v2_finetuned_29": {
+        "label": "MobileNetV2 finetuned (29 classes)",
+        "architecture": "mobilenet_v2",
+        "checkpoint": CHECKPOINT_DIR / "best_mobilenet_v2_finetuned_29.pth",
+    },
     "inception_v3_scratch": {
         "label": "InceptionV3 scratch",
         "architecture": "inception_v3",
         "checkpoint": CHECKPOINT_DIR / "best_inception_v3_scratch.pth",
     },
 }
-DEFAULT_MODEL_KEY = "mobilenet_v2_scratch"
+DEFAULT_MODEL_KEY = "mobilenet_v2_finetuned_29"
 
 DEFAULT_CLASS_NAMES = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
     "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
     "U", "V", "W", "X", "Y", "Z",
+    "del", "nothing", "space",
 ]
 
 PREPROCESS = transforms.Compose(
@@ -65,22 +71,21 @@ MODEL_INFO = {
     "architecture": None,
     "checkpoint": None,
     "message": "",
+    "class_names": DEFAULT_CLASS_NAMES,
 }
 
 
-def _load_class_names() -> list[str]:
-    classes_path = RESULTS_DIR / "classes.json"
-    if classes_path.is_file():
-        try:
-            payload = json.loads(classes_path.read_text(encoding="utf-8"))
-            if isinstance(payload, list) and all(isinstance(item, str) for item in payload):
-                return payload
-        except Exception:
-            pass
-    return DEFAULT_CLASS_NAMES
-
-
-CLASS_NAMES = _load_class_names()
+def _get_class_names(num_classes: int) -> list[str]:
+    for filename in (f"classes_{num_classes}.json", "classes.json"):
+        classes_path = RESULTS_DIR / filename
+        if classes_path.is_file():
+            try:
+                payload = json.loads(classes_path.read_text(encoding="utf-8"))
+                if isinstance(payload, list) and len(payload) == num_classes and all(isinstance(item, str) for item in payload):
+                    return payload
+            except Exception:
+                pass
+    return DEFAULT_CLASS_NAMES[:num_classes]
 
 
 def _extract_state_dict(raw_checkpoint):
@@ -110,7 +115,7 @@ def _available_model_items() -> list[tuple[str, dict]]:
     return items
 
 
-def _model_payload(key: str, model_config: dict, *, ready: bool, message: str = ""):
+def _model_payload(key: str, model_config: dict, *, ready: bool, message: str = "", class_names: list[str] = None):
     checkpoint = model_config["checkpoint"]
     return {
         "ready": ready,
@@ -119,6 +124,7 @@ def _model_payload(key: str, model_config: dict, *, ready: bool, message: str = 
         "architecture": model_config["architecture"],
         "checkpoint": str(checkpoint.relative_to(PROJECT_ROOT)) if checkpoint.exists() else str(checkpoint),
         "message": message,
+        "class_names": class_names or DEFAULT_CLASS_NAMES,
     }
 
 
@@ -143,6 +149,7 @@ def _load_model_by_key(model_key: str) -> dict:
             "architecture": None,
             "checkpoint": None,
             "message": f"Unknown model key: {model_key}",
+            "class_names": DEFAULT_CLASS_NAMES,
         }
         return MODEL_INFO
 
@@ -160,12 +167,20 @@ def _load_model_by_key(model_key: str) -> dict:
     raw_checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
     state_dict = _strip_module_prefix(_extract_state_dict(raw_checkpoint))
 
+    num_classes = len(DEFAULT_CLASS_NAMES)
+    for key in ("model.classifier.1.weight", "model.fc.weight", "classifier.1.weight"):
+        if key in state_dict:
+            num_classes = state_dict[key].shape[0]
+            break
+            
+    class_names = _get_class_names(num_classes)
+
     try:
-        model = _build_model(model_config["architecture"], num_classes=len(CLASS_NAMES)).to(DEVICE)
+        model = _build_model(model_config["architecture"], num_classes=num_classes).to(DEVICE)
         model.load_state_dict(state_dict, strict=True)
         model.eval()
         MODEL = model
-        MODEL_INFO = _model_payload(model_key, model_config, ready=True)
+        MODEL_INFO = _model_payload(model_key, model_config, ready=True, class_names=class_names)
     except Exception as exc:
         MODEL = None
         MODEL_INFO = _model_payload(
@@ -173,6 +188,7 @@ def _load_model_by_key(model_key: str) -> dict:
             model_config,
             ready=False,
             message=f"Failed to load checkpoint: {exc}",
+            class_names=class_names,
         )
 
     return MODEL_INFO
@@ -195,6 +211,7 @@ def _load_default_model() -> dict:
         "architecture": None,
         "checkpoint": None,
         "message": "No checkpoints found in models/checkpoints.",
+        "class_names": DEFAULT_CLASS_NAMES,
     }
     return MODEL_INFO
 
@@ -216,23 +233,25 @@ def _predict_image(image: Image.Image):
     if model is None:
         raise RuntimeError(model_info.get("message") or "Model is not ready")
 
+    class_names = model_info.get("class_names", DEFAULT_CLASS_NAMES)
+
     tensor = PREPROCESS(image).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
         logits = model(tensor)
         probabilities = torch.softmax(logits, dim=1)[0]
-        top_k = min(3, len(CLASS_NAMES))
+        top_k = min(3, len(class_names))
         top_probabilities, top_indices = torch.topk(probabilities, k=top_k)
 
     top_index = int(top_indices[0].item())
-    prediction = CLASS_NAMES[top_index]
+    prediction = class_names[top_index]
 
     return {
         "prediction": prediction,
         "confidence": float(top_probabilities[0].item()),
         "top3": [
             {
-                "letter": CLASS_NAMES[int(index.item())],
+                "letter": class_names[int(index.item())],
                 "confidence": float(prob.item()),
             }
             for index, prob in zip(top_indices, top_probabilities)
@@ -242,6 +261,9 @@ def _predict_image(image: Image.Image):
 
 @app.route("/")
 def index():
+    with MODEL_LOCK:
+        model_info = dict(MODEL_INFO)
+
     available_models = [
         {
             "key": key,
@@ -254,13 +276,13 @@ def index():
 
     return render_template(
         "index.html",
-        model_ready=MODEL_INFO["ready"],
-        current_model_key=MODEL_INFO["key"],
-        current_model_label=MODEL_INFO["label"],
-        model_architecture=MODEL_INFO["architecture"],
-        checkpoint_path=MODEL_INFO["checkpoint"],
-        status_message=MODEL_INFO["message"],
-        class_count=len(CLASS_NAMES),
+        model_ready=model_info["ready"],
+        current_model_key=model_info["key"],
+        current_model_label=model_info["label"],
+        model_architecture=model_info["architecture"],
+        checkpoint_path=model_info["checkpoint"],
+        status_message=model_info["message"],
+        class_count=len(model_info.get("class_names", DEFAULT_CLASS_NAMES)),
         available_models=available_models,
         default_model_key=DEFAULT_MODEL_KEY,
     )
@@ -271,6 +293,7 @@ def predict():
     with MODEL_LOCK:
         if MODEL is None:
             return jsonify({"ok": False, "error": MODEL_INFO["message"]}), 503
+        model_info = dict(MODEL_INFO)
 
     payload = request.get_json(silent=True) or {}
     image_payload = payload.get("image")
@@ -283,11 +306,11 @@ def predict():
         return jsonify(
             {
                 "ok": True,
-                "model": MODEL_INFO,
+                "model": model_info,
                 "prediction": prediction["prediction"],
                 "confidence": prediction["confidence"],
                 "top3": prediction["top3"],
-                "class_count": len(CLASS_NAMES),
+                "class_count": len(model_info.get("class_names", DEFAULT_CLASS_NAMES)),
             }
         )
     except Exception as exc:

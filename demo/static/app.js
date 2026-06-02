@@ -85,6 +85,16 @@ function commitCharacter(character) {
   appState.commitLockUntil = now + COMMIT_COOLDOWN_MS;
 }
 
+function commitAction(action) {
+  const now = Date.now();
+  if (now < appState.commitLockUntil) {
+    return;
+  }
+
+  action();
+  appState.commitLockUntil = now + COMMIT_COOLDOWN_MS;
+}
+
 function processPrediction(payload) {
   if (!payload.ok) {
     setCameraState(payload.error || "Prediction unavailable", false);
@@ -111,6 +121,25 @@ function processPrediction(payload) {
   setCameraState(`Tracking ${prediction}`, true);
 
   if (appState.stableCount >= STABLE_FRAMES) {
+    const normalized = String(prediction || "").toLowerCase();
+    if (normalized === "nothing") {
+      appState.stableCount = 0;
+      appState.lastPrediction = null;
+      return;
+    }
+    if (normalized === "space") {
+      commitAction(addSpace);
+      appState.stableCount = 0;
+      appState.lastPrediction = null;
+      return;
+    }
+    if (normalized === "del" || normalized === "backspace") {
+      commitAction(backspaceTranscript);
+      appState.stableCount = 0;
+      appState.lastPrediction = null;
+      return;
+    }
+
     commitCharacter(prediction);
     appState.stableCount = 0;
   }
