@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import sys
+from threading import Lock
 from pathlib import Path
 
 import torch
@@ -13,17 +14,32 @@ from torchvision import transforms
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CHECKPOINT_PATH = PROJECT_ROOT / "models" / "checkpoints" / "best_inception_v3_scratch.pth"
+CHECKPOINT_DIR = PROJECT_ROOT / "models" / "checkpoints"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from engine import config as train_config
+from models.ASLMobileNetV2 import ASLMobileNetV2
 from models.ASLInceptionV3 import ASLInceptionV3
 
 
 app = Flask(__name__)
+
+MODEL_REGISTRY = {
+    "mobilenet_v2_scratch": {
+        "label": "MobileNetV2 scratch",
+        "architecture": "mobilenet_v2",
+        "checkpoint": CHECKPOINT_DIR / "best_mobilenet_v2_scratch.pth",
+    },
+    "inception_v3_scratch": {
+        "label": "InceptionV3 scratch",
+        "architecture": "inception_v3",
+        "checkpoint": CHECKPOINT_DIR / "best_inception_v3_scratch.pth",
+    },
+}
+DEFAULT_MODEL_KEY = "mobilenet_v2_scratch"
 
 DEFAULT_CLASS_NAMES = [
     "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
@@ -41,8 +57,11 @@ PREPROCESS = transforms.Compose(
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MODEL = None
+MODEL_LOCK = Lock()
 MODEL_INFO = {
     "ready": False,
+    "key": None,
+    "label": None,
     "architecture": None,
     "checkpoint": None,
     "message": "",
@@ -83,45 +102,101 @@ def _strip_module_prefix(state_dict):
     return stripped
 
 
-def _build_model(num_classes: int):
-    return ASLInceptionV3(num_classes=num_classes, pretrained=False)
+def _available_model_items() -> list[tuple[str, dict]]:
+    items = []
+    for key, model_config in MODEL_REGISTRY.items():
+        if model_config["checkpoint"].is_file():
+            items.append((key, model_config))
+    return items
 
 
-def _load_model() -> None:
+def _model_payload(key: str, model_config: dict, *, ready: bool, message: str = ""):
+    checkpoint = model_config["checkpoint"]
+    return {
+        "ready": ready,
+        "key": key,
+        "label": model_config["label"],
+        "architecture": model_config["architecture"],
+        "checkpoint": str(checkpoint.relative_to(PROJECT_ROOT)) if checkpoint.exists() else str(checkpoint),
+        "message": message,
+    }
+
+
+def _build_model(architecture: str, num_classes: int):
+    if architecture == "mobilenet_v2":
+        return ASLMobileNetV2(num_classes=num_classes, pretrained=False)
+    if architecture == "inception_v3":
+        return ASLInceptionV3(num_classes=num_classes, pretrained=False)
+    raise ValueError(f"Unknown architecture: {architecture}")
+
+
+def _load_model_by_key(model_key: str) -> dict:
     global MODEL, MODEL_INFO
 
-    checkpoint_path = CHECKPOINT_PATH
-    if not checkpoint_path.is_file():
+    model_config = MODEL_REGISTRY.get(model_key)
+    if model_config is None:
+        MODEL = None
         MODEL_INFO = {
             "ready": False,
-            "architecture": "inceptionnet_v3",
-            "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
-            "message": f"Checkpoint not found: {checkpoint_path}",
+            "key": model_key,
+            "label": model_key,
+            "architecture": None,
+            "checkpoint": None,
+            "message": f"Unknown model key: {model_key}",
         }
-        return
+        return MODEL_INFO
+
+    checkpoint_path = model_config["checkpoint"]
+    if not checkpoint_path.is_file():
+        MODEL = None
+        MODEL_INFO = _model_payload(
+            model_key,
+            model_config,
+            ready=False,
+            message=f"Checkpoint not found: {checkpoint_path}",
+        )
+        return MODEL_INFO
 
     raw_checkpoint = torch.load(checkpoint_path, map_location=DEVICE)
     state_dict = _strip_module_prefix(_extract_state_dict(raw_checkpoint))
 
     try:
-        model = _build_model(num_classes=len(CLASS_NAMES)).to(DEVICE)
+        model = _build_model(model_config["architecture"], num_classes=len(CLASS_NAMES)).to(DEVICE)
         model.load_state_dict(state_dict, strict=True)
         model.eval()
         MODEL = model
-        MODEL_INFO = {
-            "ready": True,
-            "architecture": "inceptionnet_v3",
-            "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
-            "message": "",
-        }
+        MODEL_INFO = _model_payload(model_key, model_config, ready=True)
     except Exception as exc:
         MODEL = None
-        MODEL_INFO = {
-            "ready": False,
-            "architecture": "inceptionnet_v3",
-            "checkpoint": str(checkpoint_path.relative_to(PROJECT_ROOT)),
-            "message": f"Failed to load checkpoint: {exc}",
-        }
+        MODEL_INFO = _model_payload(
+            model_key,
+            model_config,
+            ready=False,
+            message=f"Failed to load checkpoint: {exc}",
+        )
+
+    return MODEL_INFO
+
+
+def _load_default_model() -> dict:
+    available_models = _available_model_items()
+    if any(key == DEFAULT_MODEL_KEY for key, _ in available_models):
+        return _load_model_by_key(DEFAULT_MODEL_KEY)
+
+    if available_models:
+        return _load_model_by_key(available_models[0][0])
+
+    global MODEL, MODEL_INFO
+    MODEL = None
+    MODEL_INFO = {
+        "ready": False,
+        "key": None,
+        "label": None,
+        "architecture": None,
+        "checkpoint": None,
+        "message": "No checkpoints found in models/checkpoints.",
+    }
+    return MODEL_INFO
 
 
 def _decode_image(image_payload: str) -> Image.Image:
@@ -134,13 +209,17 @@ def _decode_image(image_payload: str) -> Image.Image:
 
 
 def _predict_image(image: Image.Image):
-    if MODEL is None:
-        raise RuntimeError("Model is not ready")
+    with MODEL_LOCK:
+        model = MODEL
+        model_info = dict(MODEL_INFO)
+
+    if model is None:
+        raise RuntimeError(model_info.get("message") or "Model is not ready")
 
     tensor = PREPROCESS(image).unsqueeze(0).to(DEVICE)
 
     with torch.no_grad():
-        logits = MODEL(tensor)
+        logits = model(tensor)
         probabilities = torch.softmax(logits, dim=1)[0]
         top_k = min(3, len(CLASS_NAMES))
         top_probabilities, top_indices = torch.topk(probabilities, k=top_k)
@@ -163,20 +242,35 @@ def _predict_image(image: Image.Image):
 
 @app.route("/")
 def index():
+    available_models = [
+        {
+            "key": key,
+            "label": model_config["label"],
+            "architecture": model_config["architecture"],
+            "checkpoint": str(model_config["checkpoint"].relative_to(PROJECT_ROOT)),
+        }
+        for key, model_config in _available_model_items()
+    ]
+
     return render_template(
         "index.html",
         model_ready=MODEL_INFO["ready"],
+        current_model_key=MODEL_INFO["key"],
+        current_model_label=MODEL_INFO["label"],
         model_architecture=MODEL_INFO["architecture"],
         checkpoint_path=MODEL_INFO["checkpoint"],
         status_message=MODEL_INFO["message"],
         class_count=len(CLASS_NAMES),
+        available_models=available_models,
+        default_model_key=DEFAULT_MODEL_KEY,
     )
 
 
 @app.route("/predict", methods=["POST"])
 def predict():
-    if MODEL is None:
-        return jsonify({"ok": False, "error": MODEL_INFO["message"]}), 503
+    with MODEL_LOCK:
+        if MODEL is None:
+            return jsonify({"ok": False, "error": MODEL_INFO["message"]}), 503
 
     payload = request.get_json(silent=True) or {}
     image_payload = payload.get("image")
@@ -205,6 +299,38 @@ def status():
     return jsonify(MODEL_INFO)
 
 
+@app.route("/api/models")
+def models():
+    return jsonify(
+        {
+            "current": MODEL_INFO,
+            "available": [
+                {
+                    "key": key,
+                    "label": model_config["label"],
+                    "architecture": model_config["architecture"],
+                    "checkpoint": str(model_config["checkpoint"].relative_to(PROJECT_ROOT)),
+                }
+                for key, model_config in _available_model_items()
+            ],
+            "default": DEFAULT_MODEL_KEY,
+        }
+    )
+
+
+@app.route("/api/model", methods=["POST"])
+def switch_model():
+    payload = request.get_json(silent=True) or {}
+    model_key = payload.get("model") or DEFAULT_MODEL_KEY
+
+    with MODEL_LOCK:
+        model_info = _load_model_by_key(model_key)
+
+    status_code = 200 if model_info["ready"] else 400
+    return jsonify({"ok": model_info["ready"], "model": model_info}), status_code
+
+
 if __name__ == "__main__":
-    _load_model()
+    with MODEL_LOCK:
+        _load_default_model()
     app.run(host="127.0.0.1", port=5000, debug=True)
