@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" fill="none">
+  <defs>
+    <!-- Premium theme-matching gradient from dark green to bright emerald -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#064e3b" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Smooth circular container with subtle shadow -->
+  <circle cx="16" cy="16" r="15" fill="url(#bgGrad)" />
+  
+  <!-- Clean ASL Hand SVG Path in matching light mint color -->
+  <g transform="translate(4, 4) scale(1)" stroke="#f0fdf4" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v3"/>
+    <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v6"/>
+    <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8"/>
+    <path d="M6 14v1.5a5.5 5.5 0 0 0 5.5 5.5h.5a5.5 5.5 0 0 0 5.5-5.5v-3.5"/>
+    <path d="M2 13a2 2 0 0 1 2-2h2v4H4a2 2 0 0 1-2-2z"/>
+  </g>
+</svg>
