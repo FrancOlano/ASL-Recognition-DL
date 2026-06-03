@@ -37,16 +37,42 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-Run the demo
-------------
+Run the Demo Locally
+--------------------
 
-Launch the Flask demo to test inference or webcam input:
+### Option 1: Static Web Demo (Recommended)
+The premium client-side demo runs entirely in the browser using ONNX Runtime Web and WebGL. Because browsers restrict fetching local files (`model.onnx` and `classes.json`) via the `file://` protocol (due to CORS security rules), you need to serve the files using a simple local web server.
+
+#### Using Python (Built-in)
+If you have Python installed, run this single command in your terminal from the project root:
+
+```powershell
+python -m http.server 8000 --directory docs
+```
+
+#### Using Node.js / npm
+If you have Node.js installed, you can run:
+
+```powershell
+npx serve docs
+```
+
+#### Using VS Code
+If you use VS Code, you can install the **Live Server** extension, open the `docs/` folder, and click "Go Live" at the bottom right.
+
+After starting the server, open your browser and navigate to:
+**`http://localhost:8000`** (or the port specified by your server).
+
+---
+
+### Option 2: Flask Python Demo (Legacy)
+If you prefer running the original Python/Flask backend demo:
 
 ```powershell
 python ./demo/app.py
 ```
 
-The demo will look for checkpoints in the `checkpoints/` folder by default.
+This demo expects model checkpoints to be in the `checkpoints/` folder.
 
 Training
 --------

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASL Fingerspelling Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Real-time ASL fingerspelling</p>
+        <h1>Spell letters with your hand and watch them appear live.</h1>
+        <p class="lede">
+          Point your camera at one static ASL letter, hold it steady, and the model will
+          append the recognized character to the transcript.
+        </p>
+      </div>
+
+      <div class="status-card">
+        <div class="status-line">
+          <span class="dot {{ 'ready' if model_ready else 'not-ready' }}"></span>
+          <div>
+            <strong>{{ 'Model loaded' if model_ready else 'Model not loaded' }}</strong>
+            <p id="statusMessage">{{ status_message or 'Ready to run.' }}</p>
+          </div>
+        </div>
+        <dl>
+          <div>
+            <dt>Active model</dt>
+            <dd id="currentModelLabel">{{ current_model_label or 'pending' }}</dd>
+          </div>
+          <div>
+            <dt>Architecture</dt>
+            <dd id="currentModelArchitecture">{{ model_architecture or 'pending' }}</dd>
+          </div>
+          <div>
+            <dt>Checkpoint</dt>
+            <dd id="currentModelCheckpoint">{{ checkpoint_path or 'none found' }}</dd>
+          </div>
+          <div>
+            <dt>Classes</dt>
+            <dd>{{ class_count }}</dd>
+          </div>
+        </dl>
+        <div class="model-switcher">
+          <label for="modelSelect">Model</label>
+          <div class="model-switch-row">
+            <select id="modelSelect">
+              {% for model in available_models %}
+              <option value="{{ model.key }}" {% if model.key == (current_model_key or default_model_key) %}selected{% endif %}>
+                {{ model.label }}
+              </option>
+              {% endfor %}
+            </select>
+            <button id="loadModelBtn" type="button" class="ghost">Load selected</button>
+          </div>
+          <p class="model-switch-note" id="modelSwitchNote">Switching models updates inference on the next capture.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace">
+      <article class="camera-panel card">
+        <div class="panel-header">
+          <h2>Camera</h2>
+          <div class="camera-badge" id="cameraState">Waiting for permission</div>
+        </div>
+
+        <div class="viewport">
+          <video id="video" autoplay playsinline muted></video>
+          <canvas id="canvas" width="640" height="640" hidden></canvas>
+          <div class="frame-guide">
+            <span>Hold one letter inside the frame</span>
+          </div>
+        </div>
+
+        <div class="controls">
+          <div class="hand-toggle">
+            <button id="leftHandBtn" class="hand-btn active" type="button">Left</button>
+            <button id="rightHandBtn" class="hand-btn" type="button">Right</button>
+          </div>
+          <button id="startBtn" type="button">Start camera</button>
+          <button id="stopBtn" type="button" class="ghost">Stop</button>
+          <button id="clearBtn" type="button" class="ghost">Clear text</button>
+          <button id="backspaceBtn" type="button" class="ghost">Backspace</button>
+          <button id="spaceBtn" type="button" class="ghost">Space</button>
+        </div>
+      </article>
+
+      <aside class="insights">
+        <article class="prediction-card card">
+          <div class="panel-header">
+            <h2>Live prediction</h2>
+            <span class="tiny-label">Stable capture</span>
+          </div>
+          <div class="prediction-letter" id="predictionLetter">-</div>
+          <div class="confidence-row">
+            <div class="confidence-track"><div id="confidenceFill"></div></div>
+            <span id="confidenceLabel">0%</span>
+          </div>
+          <ul class="topk" id="topK"></ul>
+        </article>
+
+        <article class="transcript-card card">
+          <div class="panel-header">
+            <h2>Transcript</h2>
+            <span class="tiny-label">Letters you commit appear here</span>
+          </div>
+          <textarea id="transcript" spellcheck="false" placeholder="The spelled letters will appear here."></textarea>
+          <p class="hint">
+            Keep the same sign steady for a moment so the app can lock the prediction and
+            append it once.
+          </p>
+        </article>
+      </aside>
+    </section>
+  </main>
+
+  <script>
+    window.ASL_DEMO = {
+      modelReady: {{ 'true' if model_ready else 'false' }},
+      statusMessage: {{ status_message|tojson }},
+      currentModelKey: {{ current_model_key|tojson }},
+      currentModelLabel: {{ current_model_label|tojson }},
+      defaultModelKey: {{ default_model_key|tojson }},
+      availableModels: {{ available_models|tojson }},
+    };
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
