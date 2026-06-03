@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ASL Fingerspelling Recognition - Premium Client-Side Demo</title>
+  <meta name="description" content="Real-time American Sign Language (ASL) fingerspelling recognition using ONNX Runtime Web running completely in your browser." />
+  
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  
+  <!-- Modern Typography (Inter Font) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- FontAwesome for Premium Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+  
+  <link rel="stylesheet" href="styles.css" />
+  
+  <!-- ONNX Runtime Web CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web/dist/ort.min.js"></script>
+</head>
+<body>
+  <div class="glow-bg"></div>
+  
+  <main class="shell">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-main">
+        <span class="badge"><i class="fa-solid fa-bolt"></i> Client-Side AI</span>
+        <h1>ASL Fingerspelling Recognition</h1>
+        <p class="lede">
+          Spell letters with your hand live. Processing happens entirely in your browser using hardware-accelerated deep learning.
+        </p>
+      </div>
+      
+      <!-- System Info Panel -->
+      <div class="system-card glass-panel" id="systemPanel">
+        <div class="system-status">
+          <span class="status-dot pulsing" id="statusDot"></span>
+          <div>
+            <strong id="statusTitle">Loading ONNX Model...</strong>
+            <p id="statusMessage">Downloading MobileNetV2 (9.3 MB) into browser cache...</p>
+          </div>
+        </div>
+        <div class="progress-bar-container" id="progressBarContainer">
+          <div class="progress-bar-fill" id="progressBarFill" style="width: 0%;"></div>
+        </div>
+        <div class="system-meta">
+          <div class="meta-item">
+            <span class="meta-label">Model</span>
+            <span class="meta-val" id="modelNameVal">MobileNetV2 (29 Classes)</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Inference engine</span>
+            <span class="meta-val" id="engineVal">ONNX Runtime Web</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">Hardware acceleration</span>
+            <span class="meta-val" id="backendVal">Checking...</span>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Workspace Grid -->
+    <section class="workspace">
+      <!-- Left Column: Camera + Transcript -->
+      <div class="main-column">
+        <!-- Camera Panel -->
+        <article class="camera-panel glass-panel">
+          <div class="panel-header">
+            <div class="header-title-group">
+              <h2><i class="fa-solid fa-video"></i> Camera</h2>
+              <span class="badge-outline" id="cameraBadge">Camera Stopped</span>
+            </div>
+            
+            <div class="camera-controls">
+              <div class="hand-toggle">
+                <button id="leftHandBtn" class="hand-btn active" type="button">Left</button>
+                <button id="rightHandBtn" class="hand-btn" type="button">Right</button>
+              </div>
+              <button id="startBtn" type="button" class="btn btn-primary btn-sm">
+                <i class="fa-solid fa-play"></i> Start
+              </button>
+              <button id="stopBtn" type="button" class="btn btn-secondary btn-sm" disabled>
+                <i class="fa-solid fa-stop"></i> Stop
+              </button>
+            </div>
+          </div>
+
+          <div class="viewport">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="canvas" width="640" height="640" hidden></canvas>
+            <div class="guide-overlay" id="guideOverlay">
+              <div class="guide-box">
+                <span class="guide-label">Place hand inside frame</span>
+              </div>
+            </div>
+
+            <!-- Glassy Prediction Overlay -->
+            <div class="prediction-overlay glass-panel">
+              <div class="prediction-overlay-header">
+                <span class="badge-accent" id="trackingState">Inference Idle</span>
+              </div>
+              
+              <div class="prediction-overlay-main">
+                <div class="prediction-letter" id="predictionLetter">-</div>
+                
+                <div class="confidence-container">
+                  <div class="confidence-text">
+                    <span>Confidence</span>
+                    <strong id="confidenceLabel">0%</strong>
+                  </div>
+                  <div class="confidence-track">
+                    <div class="confidence-fill" id="confidenceFill" style="width: 0%;"></div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="top-k-container-overlay">
+                <h3>Alternatives</h3>
+                <ul class="topk-list" id="topK">
+                  <li><span>1. A</span><strong>0%</strong></li>
+                  <li><span>2. B</span><strong>0%</strong></li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <!-- Transcript Card -->
+        <article class="transcript-card glass-panel">
+          <div class="panel-header">
+            <h2><i class="fa-solid fa-keyboard"></i> Live Transcript</h2>
+            <div class="btn-group-sm">
+              <button id="spaceBtn" class="btn btn-sm" type="button"><i class="fa-solid fa-arrows-left-right"></i> Space</button>
+              <button id="backspaceBtn" class="btn btn-sm" type="button"><i class="fa-solid fa-delete-left"></i> Backspace</button>
+              <button id="clearBtn" class="btn btn-sm btn-danger" type="button"><i class="fa-solid fa-trash-can"></i> Clear</button>
+            </div>
+          </div>
+          
+          <textarea id="transcript" spellcheck="false" placeholder="The recognized characters will appear here in real time..."></textarea>
+          
+          <div class="panel-footer">
+            <i class="fa-solid fa-circle-info"></i>
+            <p>
+              Keep your sign steady for a brief moment. Once the model registers high confidence, the character will commit automatically.
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+  </main>
+  
+  <footer class="app-footer-text">
+    <p>ASL Recognition Project • Powered by ONNX Runtime Web & WebGL</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
