@@ -40,39 +40,22 @@ pip install -r requirements.txt
 Run the Demo Locally
 --------------------
 
-### Option 1: Static Web Demo (Recommended)
 The premium client-side demo runs entirely in the browser using ONNX Runtime Web and WebGL. Because browsers restrict fetching local files (`model.onnx` and `classes.json`) via the `file://` protocol (due to CORS security rules), you need to serve the files using a simple local web server.
 
-#### Using Python (Built-in)
-If you have Python installed, run this single command in your terminal from the project root:
+To run the demo, execute the included script from the project root:
 
 ```powershell
-python -m http.server 8000 --directory docs
+python demo/app.py
 ```
 
-#### Using Node.js / npm
-If you have Node.js installed, you can run:
+After starting the server, open your browser and navigate to **`http://127.0.0.1:5000`**.
+
+Alternatively, you can run any other static web server targeting the `demo/` directory:
 
 ```powershell
-npx serve docs
+python -m http.server 8000 --directory demo
 ```
-
-#### Using VS Code
-If you use VS Code, you can install the **Live Server** extension, open the `docs/` folder, and click "Go Live" at the bottom right.
-
-After starting the server, open your browser and navigate to:
-**`http://localhost:8000`** (or the port specified by your server).
-
----
-
-### Option 2: Flask Python Demo (Legacy)
-If you prefer running the original Python/Flask backend demo:
-
-```powershell
-python ./demo/app.py
-```
-
-This demo expects model checkpoints to be in the `checkpoints/` folder.
+Or use the **Live Server** extension in VS Code to serve the `demo/` folder.
 
 Training
 --------

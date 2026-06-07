@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - 'docs/**'
+      - 'demo/**'
       - '.github/workflows/deploy.yml'
 
 permissions:
@@ -21,5 +21,5 @@ jobs:
       - name: Deploy to GitHub Pages
         uses: JamesIves/github-pages-deploy-action@v4
         with:
-          folder: docs # Deploys the docs/ folder contents directly to gh-pages root
+          folder: demo # Deploys the demo/ folder contents directly to gh-pages root
           branch: gh-pages

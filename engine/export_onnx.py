@@ -10,7 +10,7 @@ from models.ASLMobileNetV2 import ASLMobileNetV2
 
 def export_onnx():
     checkpoint_path = PROJECT_ROOT / "models" / "checkpoints" / "best_mobilenet_v2_finetuned_29.pth"
-    output_dir = PROJECT_ROOT / "docs"
+    output_dir = PROJECT_ROOT / "demo"
     output_dir.mkdir(parents=True, exist_ok=True)
     output_onnx_path = output_dir / "model.onnx"
 
