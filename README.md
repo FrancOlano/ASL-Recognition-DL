@@ -96,5 +96,13 @@ Or use the **Live Server** extension in VS Code to serve the `demo/` folder.
 
 ### Acknowledgements
 
-- **ASL Alphabet Dataset**: The primary dataset used to train the models in this repository. 
-  - Akash Nagaraj. (2018). *ASL Alphabet* [Dataset]. Kaggle. https://doi.org/10.34740/KAGGLE/DSV/29550
+- **ASL Alphabet Dataset**: The primary dataset used to train the models in this repository: 
+Akash Nagaraj. (2018). *ASL Alphabet* [Dataset]. Kaggle. https://doi.org/10.34740/KAGGLE/DSV/29550
+  
+- **ASL Fingerspelling Detection Model**: Mohammed-Shoaib. (s. f.). GitHub - Mohammed-Shoaib/ASL-Fingerspelling: 🧏 Detection of the alphabets in American Sign Language (ASL). GitHub. https://github.com/Mohammed-Shoaib/ASL-Fingerspelling
+
+- **Deep Learning Hand Gesture Recognition System**: Guillaumephd. (s. f.). GitHub - guillaumephd/deep_learning_hand_gesture_recognition: A deep learning model for hand gesture recognition. GitHub. https://github.com/guillaumephd/deep_learning_hand_gesture_recognition
+
+- **MobileNetV2**: Mark Sandler, Andrew Howard, Menglong Zhu, Andrey Zhmoginov, & Liang-Chieh Chen. (2018). MobileNetV2: Inverted residuals and linear bottlenecks. arXiv. https://arxiv.org/abs/1801.04381
+
+- **InceptionV3**: Christian Szegedy, Vincent Vanhoucke, Sergey Ioffe, Jonathon Shlens, & Zbigniew Wojna. (2015). Rethinking the inception architecture for computer vision. arXiv. https://arxiv.org/abs/1512.00567
